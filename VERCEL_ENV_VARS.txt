@@ -1,0 +1,44 @@
+# Environment Variables cho Vercel Deployment
+# Copy các giá trị này vào Vercel Dashboard → Settings → Environment Variables
+
+# ============================================
+# REQUIRED - Bắt buộc
+# ============================================
+NODE_ENV=production
+
+# ============================================
+# GOOGLE SHEETS - Đã cấu hình
+# ============================================
+GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycbxnjl2x3-XV-vt_n9Ub5mRkZIoktZH7YcsJIksxfGRnCU0N6VsGgKhh76WW1Ah9wLAu9g/exec
+
+# ============================================
+# VIETQR API - Optional (chưa có, để trống hoặc bỏ qua)
+# ============================================
+# VIETQR_CLIENT_ID=your_client_id_here
+# VIETQR_API_KEY=your_api_key_here
+
+# ============================================
+# TAX LOOKUP API - Optional (chưa có, để trống hoặc bỏ qua)
+# ============================================
+# TAX_LOOKUP_API_URL=https://api.example.com/tax-lookup
+
+# ============================================
+# HƯỚNG DẪN THÊM VÀO VERCEL:
+# ============================================
+# 1. Vào Vercel Dashboard: https://vercel.com/dashboard
+# 2. Chọn project "tax-info"
+# 3. Vào Settings → Environment Variables
+# 4. Thêm từng biến:
+#    - Key: NODE_ENV
+#    - Value: production
+#    - Environment: Production, Preview, Development (chọn tất cả)
+#    - Click "Save"
+#
+# 5. Lặp lại cho GOOGLE_APPS_SCRIPT_URL:
+#    - Key: GOOGLE_APPS_SCRIPT_URL
+#    - Value: https://script.google.com/macros/s/AKfycbxnjl2x3-XV-vt_n9Ub5mRkZIoktZH7YcsJIksxfGRnCU0N6VsGgKhh76WW1Ah9wLAu9g/exec
+#    - Environment: Production, Preview, Development (chọn tất cả)
+#    - Click "Save"
+#
+# 6. Sau khi thêm xong, redeploy project để áp dụng changes
+

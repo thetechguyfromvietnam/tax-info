@@ -3,6 +3,7 @@ export const getApiUrl = () => {
   // In production, use relative URLs (same domain)
   // In development, use localhost
   if (import.meta.env.PROD) {
+    // In Vercel, API routes are at /api/*
     return ''; // Relative URL - same domain as frontend
   } else {
     return 'http://localhost:3002'; // Local development server

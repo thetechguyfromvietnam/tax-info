@@ -25,8 +25,12 @@ const TaxInfo = () => {
     const loadSaved = async () => {
       try {
         const apiUrl = getApiUrl()
+        console.log('[TaxInfo] Loading saved tax info from:', `${apiUrl}/api/tax-info`)
         const res = await fetch(`${apiUrl}/api/tax-info`)
-        if (!res.ok) return
+        if (!res.ok) {
+          console.log('[TaxInfo] No saved data or server not available')
+          return
+        }
         const data = await res.json()
         if (data.success && data.data) {
           setSavedTaxInfo(data.data)
@@ -39,7 +43,8 @@ const TaxInfo = () => {
           setValue('phone', t.phone || '')
         }
       } catch (err) {
-        console.error('Load tax info error', err)
+        console.error('[TaxInfo] Load tax info error:', err)
+        // Don't show error to user, just log it
       }
     }
     loadSaved()

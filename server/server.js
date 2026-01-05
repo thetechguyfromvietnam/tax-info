@@ -29,10 +29,13 @@ if (GOOGLE_APPS_SCRIPT_URL) {
 }
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for Vercel compatibility
+  crossOriginEmbedderPolicy: false
+}));
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? process.env.FRONTEND_URL || '*' 
+    ? process.env.FRONTEND_URL || true // Allow all origins in production on Vercel
     : [
         'http://localhost:3000',
         'http://localhost:3001', 
