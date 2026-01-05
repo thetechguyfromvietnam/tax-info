@@ -62,38 +62,55 @@ const TaxInfo = () => {
       setIsLookingUp(true)
       setLookupResult(null)
       const apiUrl = getApiUrl()
-      console.log(`[Frontend] Looking up tax code: ${taxCode} via ${apiUrl}/api/tax-lookup/${taxCode}`)
+      const requestUrl = `${apiUrl}/api/tax-lookup/${taxCode}`
+      console.log(`[Frontend] Looking up tax code: ${taxCode} via ${requestUrl}`)
       
-      const res = await fetch(`${apiUrl}/api/tax-lookup/${taxCode}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      })
+      // Create AbortController for timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 20000) // 20 second timeout
       
-      // Check if response is ok
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-      }
-      
-      const data = await res.json()
-      console.log('[Frontend] Lookup response:', data)
-      
-      if (data.success && data.data) {
-        setLookupResult({ success: true, message: 'Đã tìm thấy thông tin công ty' })
-        const info = data.data
-        if (info.companyName) setValue('companyName', info.companyName)
-        if (info.address) setValue('address', info.address)
-        if (info.companyNameEn) {
-          // Optionally set English name if needed
-          console.log('Company English name:', info.companyNameEn)
-        }
-      } else {
-        setLookupResult({
-          success: false,
-          message: data.message || 'Không tìm thấy thông tin công ty từ các nguồn tra cứu',
+      try {
+        const res = await fetch(requestUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal
         })
+        
+        clearTimeout(timeoutId)
+        
+        // Check if response is ok
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        }
+        
+        const data = await res.json()
+        console.log('[Frontend] Lookup response:', data)
+        
+        if (data.success && data.data) {
+          setLookupResult({ success: true, message: 'Đã tìm thấy thông tin công ty' })
+          const info = data.data
+          if (info.companyName) setValue('companyName', info.companyName)
+          if (info.address) setValue('address', info.address)
+          if (info.companyNameEn) {
+            // Optionally set English name if needed
+            console.log('Company English name:', info.companyNameEn)
+          }
+        } else {
+          setLookupResult({
+            success: false,
+            message: data.message || 'Không tìm thấy thông tin công ty từ các nguồn tra cứu',
+          })
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Yêu cầu tra cứu quá thời gian. Vui lòng thử lại.')
+        }
+        throw fetchError
       }
     } catch (err) {
       console.error('[Frontend] Lookup error:', err)
@@ -101,6 +118,8 @@ const TaxInfo = () => {
       
       if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
         errorMessage = 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng hoặc đảm bảo server đang chạy.'
+      } else if (err.message?.includes('timeout') || err.message?.includes('thời gian')) {
+        errorMessage = 'Yêu cầu tra cứu quá thời gian. Vui lòng thử lại.'
       } else if (err.message) {
         errorMessage = `Lỗi: ${err.message}`
       }
@@ -119,43 +138,109 @@ const TaxInfo = () => {
     setSubmitError('')
     setSubmitSuccess(false)
     try {
+      // Normalize phone number: remove spaces, dashes, and +84 prefix
+      let normalizedPhone = formData.phone || ''
+      normalizedPhone = normalizedPhone.replace(/\s+/g, '') // Remove spaces
+      normalizedPhone = normalizedPhone.replace(/-/g, '') // Remove dashes
+      normalizedPhone = normalizedPhone.replace(/\+84/g, '0') // Replace +84 with 0
+      normalizedPhone = normalizedPhone.replace(/^84/, '0') // Replace 84 prefix with 0
+      
       const apiUrl = getApiUrl()
-      const res = await fetch(`${apiUrl}/api/tax-info`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Lưu thông tin thất bại')
+      const requestUrl = `${apiUrl}/api/tax-info`
+      console.log('[TaxInfo] Submitting to:', requestUrl)
+      
+      // Create AbortController for timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+      
+      try {
+        const res = await fetch(requestUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...formData,
+            phone: normalizedPhone, // Use normalized phone
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }),
+          signal: controller.signal
+        })
+        
+        clearTimeout(timeoutId)
+        
+        // Check if response is ok
+        if (!res.ok) {
+          let errorMessage = `Lỗi HTTP ${res.status}: ${res.statusText}`
+          try {
+            const errorData = await res.json()
+            if (errorData.message) {
+              errorMessage = errorData.message
+            }
+          } catch (e) {
+            // If response is not JSON, use status text
+            console.error('[TaxInfo] Failed to parse error response:', e)
+          }
+          throw new Error(errorMessage)
+        }
+        
+        const data = await res.json()
+        console.log('[TaxInfo] Response data:', data)
+        
+        if (!data.success) {
+          throw new Error(data.message || 'Lưu thông tin thất bại')
+        }
+        
+        // Check Google Sheets sync status
+        if (data.googleSheetsSync) {
+          if (data.googleSheetsSync.success) {
+            console.log('[TaxInfo] ✅ Google Sheets sync successful')
+          } else {
+            console.warn('[TaxInfo] ⚠️ Google Sheets sync failed:', data.googleSheetsSync.message)
+            // Log warning but don't show error to user - data is still saved
+            // The backend will retry automatically, and user can check logs if needed
+          }
+        }
+        
+        setSubmitSuccess(true)
+        setSavedTaxInfo(data.data)
+        
+        // Reset form để tiếp tục nhập thông tin mới
+        reset({
+          taxCode: '',
+          invoiceNumber: '',
+          companyName: '',
+          address: '',
+          email: '',
+          phone: ''
+        })
+        
+        // Clear lookup result
+        setLookupResult(null)
+        
+        // Auto hide success message after 3 seconds
+        setTimeout(() => {
+          setSubmitSuccess(false)
+        }, 3000)
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Yêu cầu quá thời gian. Vui lòng kiểm tra kết nối mạng và thử lại.')
+        }
+        throw fetchError
       }
-      setSubmitSuccess(true)
-      setSavedTaxInfo(data.data)
-      
-      // Reset form để tiếp tục nhập thông tin mới
-      reset({
-        taxCode: '',
-        invoiceNumber: '',
-        companyName: '',
-        address: '',
-        email: '',
-        phone: ''
-      })
-      
-      // Clear lookup result
-      setLookupResult(null)
-      
-      // Auto hide success message after 3 seconds
-      setTimeout(() => {
-        setSubmitSuccess(false)
-      }, 3000)
     } catch (err) {
-      console.error('Save tax info error', err)
-      setSubmitError(err.message || 'Có lỗi xảy ra khi lưu thông tin')
+      console.error('[TaxInfo] Save tax info error:', err)
+      let errorMessage = err.message || 'Có lỗi xảy ra khi lưu thông tin'
+      
+      // Provide more specific error messages
+      if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        errorMessage = 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng và thử lại.'
+      } else if (err.message?.includes('timeout') || err.message?.includes('thời gian')) {
+        errorMessage = 'Yêu cầu quá thời gian. Vui lòng kiểm tra kết nối mạng và thử lại.'
+      }
+      
+      setSubmitError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -185,7 +270,7 @@ const TaxInfo = () => {
         {submitSuccess && (
           <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
             <CheckCircle className="text-green-600" size={22} />
-            <div>
+            <div className="flex-1">
               <p className="font-semibold text-green-800">Lưu thành công!</p>
               <p className="text-sm text-green-700">
                 Thông tin mã số thuế và số hóa đơn đã được lưu.
@@ -388,13 +473,18 @@ const TaxInfo = () => {
                 type="tel"
                 {...register('phone', {
                   required: 'Vui lòng nhập số điện thoại',
-                  pattern: {
-                    value: /^[0-9]{10,11}$/,
-                    message: 'Số điện thoại phải có 10-11 chữ số',
+                  validate: (value) => {
+                    if (!value) return 'Vui lòng nhập số điện thoại'
+                    // Normalize phone number for validation
+                    let normalized = value.replace(/\s+/g, '').replace(/-/g, '').replace(/\+84/g, '0').replace(/^84/, '0')
+                    if (!/^[0-9]{10,11}$/.test(normalized)) {
+                      return 'Số điện thoại phải có 10-11 chữ số (có thể nhập với dấu cách hoặc dấu gạch ngang)'
+                    }
+                    return true
                   },
                 })}
                 className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                placeholder="Nhập số điện thoại"
+                placeholder="Nhập số điện thoại (ví dụ: 0123 456 789 hoặc 0123-456-789)"
               />
               {errors.phone && (
                 <p className="mt-1 text-xs text-red-600">{errors.phone.message}</p>

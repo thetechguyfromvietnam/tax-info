@@ -117,19 +117,22 @@ const writeTaxInfo = (taxInfo) => {
 };
 
 // Append tax info to Google Sheets via Apps Script (if configured)
-const appendTaxInfoToSheet = async (taxInfo) => {
+const appendTaxInfoToSheet = async (taxInfo, retryCount = 0) => {
+  const MAX_RETRIES = 2;
+  
   try {
     console.log('[Google Sheets] Function called with taxInfo:', {
       taxCode: taxInfo.taxCode,
       companyName: taxInfo.companyName,
-      invoiceNumber: taxInfo.invoiceNumber
+      invoiceNumber: taxInfo.invoiceNumber,
+      retryAttempt: retryCount
     });
     
     if (!GOOGLE_APPS_SCRIPT_URL) {
       // Google Sheets not configured – nothing to do
       console.log('ℹ️ [Google Sheets] Not configured (GOOGLE_APPS_SCRIPT_URL not set)');
       console.log('ℹ️ [Google Sheets] Check server/.env file for GOOGLE_APPS_SCRIPT_URL');
-      return;
+      return { success: false, message: 'Google Sheets not configured' };
     }
 
     console.log('[Google Sheets] Sending data to Apps Script...');
@@ -143,61 +146,120 @@ const appendTaxInfoToSheet = async (taxInfo) => {
       phone: taxInfo.phone || ''
     });
     
-    // Send data to Apps Script web app
-    // Note: Google Apps Script URLs may redirect, so we need to follow redirects
-    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        invoiceNumber: taxInfo.invoiceNumber || '',
-        taxCode: taxInfo.taxCode || '',
-        companyName: taxInfo.companyName || '',
-        address: taxInfo.address || '',
-        email: taxInfo.email || '',
-        phone: taxInfo.phone || ''
-      }),
-      redirect: 'follow' // Follow redirects
-    });
-
-    const responseText = await response.text();
-    console.log(`[Google Sheets] Response status: ${response.status} ${response.statusText}`);
-    console.log(`[Google Sheets] Response body: ${responseText.substring(0, 300)}`);
+    // Create AbortController for timeout (30 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    if (response.ok) {
-      try {
-        const result = JSON.parse(responseText);
-        if (result.success) {
-          console.log('✅ [Google Sheets] Appended tax info successfully');
-          console.log(`   Tax Code: ${taxInfo.taxCode}, Company: ${taxInfo.companyName}`);
-        } else {
-          console.error('❌ [Google Sheets] Apps Script returned error:', result.message);
-        }
-      } catch (parseError) {
-        console.error('❌ [Google Sheets] Failed to parse JSON response:', parseError.message);
-        console.error(`   Response was: ${responseText.substring(0, 200)}`);
-      }
-    } else {
-      console.error(`❌ [Google Sheets] Failed to call Apps Script: ${response.status} ${response.statusText}`);
-      if (responseText) {
-        console.error(`   Error details: ${responseText.substring(0, 300)}`);
-      }
+    try {
+      // Send data to Apps Script web app
+      // Note: Google Apps Script URLs may redirect, so we need to follow redirects
+      const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceNumber: taxInfo.invoiceNumber || '',
+          taxCode: taxInfo.taxCode || '',
+          companyName: taxInfo.companyName || '',
+          address: taxInfo.address || '',
+          email: taxInfo.email || '',
+          phone: taxInfo.phone || ''
+        }),
+        redirect: 'follow', // Follow redirects
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      const responseText = await response.text();
+      console.log(`[Google Sheets] Response status: ${response.status} ${response.statusText}`);
+      console.log(`[Google Sheets] Response body: ${responseText.substring(0, 300)}`);
       
-      // Provide helpful error messages
-      if (response.status === 401) {
-        console.error('   💡 Tip: Check if Apps Script is authorized and "Who has access" is set to "Anyone"');
-      } else if (response.status === 403) {
-        console.error('   💡 Tip: Check if the Google Sheet allows editing and Apps Script has proper permissions');
-      } else if (response.status === 404) {
-        console.error('   💡 Tip: Check if GOOGLE_APPS_SCRIPT_URL is correct');
+      if (response.ok) {
+        try {
+          const result = JSON.parse(responseText);
+          if (result.success) {
+            console.log('✅ [Google Sheets] Appended tax info successfully');
+            console.log(`   Tax Code: ${taxInfo.taxCode}, Company: ${taxInfo.companyName}`);
+            return { success: true, message: 'Data saved to Google Sheets' };
+          } else {
+            console.error('❌ [Google Sheets] Apps Script returned error:', result.message);
+            // Retry on error if we haven't exceeded max retries
+            if (retryCount < MAX_RETRIES) {
+              console.log(`[Google Sheets] Retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+              await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+              return appendTaxInfoToSheet(taxInfo, retryCount + 1);
+            }
+            return { success: false, message: result.message || 'Apps Script returned error' };
+          }
+        } catch (parseError) {
+          console.error('❌ [Google Sheets] Failed to parse JSON response:', parseError.message);
+          console.error(`   Response was: ${responseText.substring(0, 200)}`);
+          // Retry on parse error if we haven't exceeded max retries
+          if (retryCount < MAX_RETRIES) {
+            console.log(`[Google Sheets] Retrying due to parse error... (${retryCount + 1}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+            return appendTaxInfoToSheet(taxInfo, retryCount + 1);
+          }
+          return { success: false, message: 'Failed to parse response from Google Sheets' };
+        }
+      } else {
+        console.error(`❌ [Google Sheets] Failed to call Apps Script: ${response.status} ${response.statusText}`);
+        if (responseText) {
+          console.error(`   Error details: ${responseText.substring(0, 300)}`);
+        }
+        
+        // Retry on 5xx errors (server errors) but not on 4xx errors (client errors)
+        if (response.status >= 500 && retryCount < MAX_RETRIES) {
+          console.log(`[Google Sheets] Retrying due to server error... (${retryCount + 1}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return appendTaxInfoToSheet(taxInfo, retryCount + 1);
+        }
+        
+        // Provide helpful error messages
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        if (response.status === 401) {
+          errorMessage = 'Apps Script authorization error. Check if "Who has access" is set to "Anyone"';
+          console.error('   💡 Tip: Check if Apps Script is authorized and "Who has access" is set to "Anyone"');
+        } else if (response.status === 403) {
+          errorMessage = 'Permission denied. Check if the Google Sheet allows editing';
+          console.error('   💡 Tip: Check if the Google Sheet allows editing and Apps Script has proper permissions');
+        } else if (response.status === 404) {
+          errorMessage = 'Apps Script URL not found. Check GOOGLE_APPS_SCRIPT_URL';
+          console.error('   💡 Tip: Check if GOOGLE_APPS_SCRIPT_URL is correct');
+        }
+        
+        return { success: false, message: errorMessage };
       }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      if (fetchError.name === 'AbortError') {
+        console.error('❌ [Google Sheets] Request timeout after 30 seconds');
+        // Retry on timeout if we haven't exceeded max retries
+        if (retryCount < MAX_RETRIES) {
+          console.log(`[Google Sheets] Retrying due to timeout... (${retryCount + 1}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return appendTaxInfoToSheet(taxInfo, retryCount + 1);
+        }
+        return { success: false, message: 'Request timeout. Please check your connection and try again.' };
+      }
+      throw fetchError;
     }
   } catch (error) {
     console.error('❌ [Google Sheets] Error appending tax info:', error.message);
     if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
       console.error('   💡 Tip: Check your internet connection and Apps Script URL');
+      // Retry on network errors if we haven't exceeded max retries
+      if (retryCount < MAX_RETRIES) {
+        console.log(`[Google Sheets] Retrying due to network error... (${retryCount + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return appendTaxInfoToSheet(taxInfo, retryCount + 1);
+      }
+      return { success: false, message: 'Network error. Please check your connection.' };
     }
+    return { success: false, message: error.message || 'Unknown error occurred' };
   }
 };
 
@@ -651,21 +713,27 @@ app.post('/api/tax-info', (req, res) => {
       });
     }
 
+    // Normalize phone number: remove spaces, dashes, and +84 prefix
+    let normalizedPhone = taxData.phone.replace(/\s+/g, ''); // Remove spaces
+    normalizedPhone = normalizedPhone.replace(/-/g, ''); // Remove dashes
+    normalizedPhone = normalizedPhone.replace(/\+84/g, '0'); // Replace +84 with 0
+    normalizedPhone = normalizedPhone.replace(/^84/, '0'); // Replace 84 prefix with 0
+
     // Validate phone format (10-11 digits)
-    if (!/^[0-9]{10,11}$/.test(taxData.phone)) {
+    if (!/^[0-9]{10,11}$/.test(normalizedPhone)) {
       return res.status(400).json({
         success: false,
-        message: 'Số điện thoại phải có 10-11 chữ số'
+        message: 'Số điện thoại phải có 10-11 chữ số (có thể nhập với dấu cách hoặc dấu gạch ngang)'
       });
     }
 
-    // Create tax info object
+    // Create tax info object (use normalized phone)
     const taxInfo = {
       taxCode: taxData.taxCode,
       companyName: taxData.companyName || '',
       address: taxData.address || '',
       email: taxData.email || '',
-      phone: taxData.phone || '',
+      phone: normalizedPhone, // Use normalized phone number
       invoiceNumber: taxData.invoiceNumber || '',
       createdAt: taxData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -674,22 +742,34 @@ app.post('/api/tax-info', (req, res) => {
     // Save to file
     const saved = writeTaxInfo(taxInfo);
     
-    // Also append to Google Sheet (fire-and-forget)
+    // Also append to Google Sheet (with better error handling)
     console.log('[POST /api/tax-info] Attempting to save to Google Sheets...');
-    appendTaxInfoToSheet(taxInfo)
-      .then(() => {
-        console.log('[POST /api/tax-info] Google Sheets sync completed');
-      })
-      .catch((err) => {
-        console.error('[POST /api/tax-info] Failed to sync tax info to Google Sheet:', err?.message);
-        console.error('[POST /api/tax-info] Error stack:', err?.stack);
-      });
+    let googleSheetsResult = null;
+    try {
+      googleSheetsResult = await appendTaxInfoToSheet(taxInfo);
+      if (googleSheetsResult.success) {
+        console.log('[POST /api/tax-info] ✅ Google Sheets sync completed successfully');
+      } else {
+        console.error('[POST /api/tax-info] ⚠️ Google Sheets sync failed:', googleSheetsResult.message);
+        // Don't fail the entire request if Google Sheets fails, but log it
+      }
+    } catch (err) {
+      console.error('[POST /api/tax-info] ❌ Failed to sync tax info to Google Sheet:', err?.message);
+      console.error('[POST /api/tax-info] Error stack:', err?.stack);
+      // Don't fail the entire request if Google Sheets fails
+    }
     
     if (saved) {
+      // Include Google Sheets sync status in response if available
+      const responseMessage = googleSheetsResult?.success 
+        ? 'Thông tin mã số thuế đã được lưu thành công và đã được ghi vào Google Sheet'
+        : 'Thông tin mã số thuế đã được lưu thành công' + (googleSheetsResult ? ` (Lưu vào Google Sheet: ${googleSheetsResult.message})` : '');
+      
       res.json({
         success: true,
-        message: 'Thông tin mã số thuế đã được lưu thành công',
-        data: taxInfo
+        message: responseMessage,
+        data: taxInfo,
+        googleSheetsSync: googleSheetsResult || { success: false, message: 'Not attempted' }
       });
     } else {
       throw new Error('Failed to save tax information');
