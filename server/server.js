@@ -63,8 +63,15 @@ app.get('/api/health', (req, res) => {
 });
 
 // Tax Info Storage Functions
+// Note: On Vercel serverless, file system is read-only except /tmp
 const readTaxInfo = () => {
   try {
+    // On Vercel, file system operations may not work, return null gracefully
+    if (process.env.VERCEL) {
+      console.log('[File System] Running on Vercel - file operations disabled');
+      return null;
+    }
+    
     if (fs.existsSync(TAX_INFO_FILE)) {
       const data = fs.readFileSync(TAX_INFO_FILE, 'utf8');
       return JSON.parse(data);
@@ -78,11 +85,18 @@ const readTaxInfo = () => {
 
 const writeTaxInfo = (taxInfo) => {
   try {
+    // On Vercel, file system is read-only except /tmp
+    if (process.env.VERCEL) {
+      console.log('[File System] Running on Vercel - skipping file write (data will be saved to Google Sheets only)');
+      return true; // Return true to not break the flow, data is saved to Google Sheets
+    }
+    
     fs.writeFileSync(TAX_INFO_FILE, JSON.stringify(taxInfo, null, 2), 'utf8');
     return true;
   } catch (error) {
     console.error('Error writing tax info:', error);
-    return false;
+    // Don't fail completely, Google Sheets will still save the data
+    return true;
   }
 };
 
@@ -465,6 +479,7 @@ app.get('/api/tax-lookup/:taxCode', async (req, res) => {
   try {
     const { taxCode } = req.params;
     console.log(`[Tax Lookup] Request received for tax code: ${taxCode}`);
+    console.log(`[Tax Lookup] Environment: ${process.env.NODE_ENV}, Vercel: ${process.env.VERCEL ? 'Yes' : 'No'}`);
     
     // Validate tax code format first
     if (!taxCode || !/^[0-9]{10,13}$/.test(taxCode)) {
@@ -475,11 +490,26 @@ app.get('/api/tax-lookup/:taxCode', async (req, res) => {
       });
     }
     
-    const result = await lookupCompanyByTaxCode(taxCode);
+    // Call lookup function with timeout protection
+    let result;
+    try {
+      result = await Promise.race([
+        lookupCompanyByTaxCode(taxCode),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Lookup timeout after 15 seconds')), 15000)
+        )
+      ]);
+    } catch (lookupError) {
+      console.error('[Tax Lookup] Lookup function error:', lookupError);
+      return res.status(200).json({
+        success: false,
+        message: lookupError.message || 'Lỗi khi tra cứu thông tin. Vui lòng thử lại sau.'
+      });
+    }
     
     if (result && result.success) {
       console.log(`[Tax Lookup] ✅ Success for ${taxCode}: ${result.data?.companyName || 'N/A'}`);
-      res.json({
+      return res.json({
         success: true,
         data: result.data
       });
@@ -487,21 +517,23 @@ app.get('/api/tax-lookup/:taxCode', async (req, res) => {
       const errorMessage = result?.message || 'Không tìm thấy thông tin công ty từ các nguồn tra cứu';
       console.log(`[Tax Lookup] ❌ Failed for ${taxCode}: ${errorMessage}`);
       // Return 200 with success: false instead of 404, so frontend can handle it gracefully
-      res.status(200).json({
+      return res.status(200).json({
         success: false,
         message: errorMessage
       });
     }
   } catch (error) {
-    console.error('[Tax Lookup] ❌ Exception:', error);
+    console.error('[Tax Lookup] ❌ Unexpected Exception:', error);
     console.error('[Tax Lookup] Error details:', {
       message: error.message,
-      stack: error.stack,
+      stack: error.stack?.substring(0, 500), // Limit stack trace length
       name: error.name
     });
-    res.status(500).json({
+    
+    // Always return 200 with error message, not 500, so frontend can handle gracefully
+    return res.status(200).json({
       success: false,
-      message: `Lỗi hệ thống khi tra cứu: ${error.message || 'Vui lòng thử lại sau'}`
+      message: `Lỗi khi tra cứu: ${error.message || 'Vui lòng thử lại sau'}`
     });
   }
 });
