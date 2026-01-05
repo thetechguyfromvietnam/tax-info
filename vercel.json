@@ -6,28 +6,10 @@
     {
       "source": "/api/(.*)",
       "destination": "/api/index.js"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.js"
     },
     {
-      "src": "/assets/(.*)",
-      "dest": "/assets/$1",
-      "continue": true
-    },
-    {
-      "src": "/(.*\\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map))",
-      "dest": "/$1",
-      "headers": {
-        "cache-control": "public, max-age=31536000, immutable"
-      }
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
     }
   ],
   "functions": {
@@ -42,10 +24,6 @@
         {
           "key": "Content-Type",
           "value": "application/javascript; charset=utf-8"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
         }
       ]
     },
