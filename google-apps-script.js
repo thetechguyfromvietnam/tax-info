@@ -5,17 +5,28 @@
  * 1. Mở Google Sheet: https://docs.google.com/spreadsheets/d/1biHwq9fCQ1QjdbjlRBZ2L4kL10VoAaU8L4spQZHaNes
  * 2. Vào Extensions > Apps Script
  * 3. Xóa code mặc định và paste code này vào
- * 4. Lưu và đặt tên project (ví dụ: "Tax Info Logger")
- * 5. Deploy > New deployment > Web app
- * 6. Chọn:
+ * 4. Nếu muốn thêm Library:
+ *    - Vào Libraries (thư viện) ở menu bên trái
+ *    - Click "+" để thêm library
+ *    - Dán library ID: 1t3HJEDrWr9WyLRPWA2Np2wmAYyKcGzA9sqRBP0N-EaTul_Q64ufSs76j
+ *    - Chọn version mới nhất
+ *    - Đặt identifier (ví dụ: "MyLibrary")
+ *    - Click "Save"
+ *    - Authorize library khi được yêu cầu
+ * 5. Lưu và đặt tên project (ví dụ: "Tax Info Logger")
+ * 6. Deploy > New deployment > Web app
+ * 7. Chọn:
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 7. Copy Web App URL và paste vào server/.env như GOOGLE_APPS_SCRIPT_URL
+ * 8. Copy Web App URL và paste vào server/.env như GOOGLE_APPS_SCRIPT_URL
  */
 
 // Sheet name - có thể đổi thành tên sheet cụ thể hoặc để null để dùng sheet đầu tiên
 // Nếu để null, sẽ sử dụng sheet đầu tiên trong spreadsheet
 const SHEET_NAME = null; // null = sheet đầu tiên, hoặc 'tax_info', 'TaxInfo', 'Sheet1', etc.
+
+// Nếu bạn đã thêm library, uncomment và sử dụng identifier bạn đã đặt:
+// const MyLibrary = LibraryName; // Thay "LibraryName" bằng identifier bạn đã đặt trong Libraries
 
 // Function để xử lý POST request từ backend
 function doPost(e) {
