@@ -666,7 +666,7 @@ app.post('/api/tax-lookup/parse', (req, res) => {
   }
 });
 
-app.post('/api/tax-info', (req, res) => {
+app.post('/api/tax-info', async (req, res) => {
   try {
     const taxData = req.body;
     
