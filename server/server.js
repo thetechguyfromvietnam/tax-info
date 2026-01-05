@@ -286,7 +286,15 @@ const tryVietQRApi = async (taxCode) => {
       return null;
     }
     
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error('VietQR API: Failed to parse JSON response:', jsonError);
+      const textResponse = await response.text();
+      console.error('VietQR API: Raw response:', textResponse.substring(0, 200));
+      return null;
+    }
     
     // VietQR format: {code: "00", desc: "Success", data: {id, name, internationalName, shortName, address}}
     if (data.code === '00' && data.data) {
@@ -365,7 +373,15 @@ const lookupCompanyByTaxCode = async (taxCode) => {
         clearTimeout(timeoutId);
         
         if (response.ok) {
-          const data = await response.json();
+          let data;
+          try {
+            data = await response.json();
+          } catch (jsonError) {
+            console.error('Custom API: Failed to parse JSON response:', jsonError);
+            const textResponse = await response.text().catch(() => 'Unable to read response');
+            console.error('Custom API: Raw response:', textResponse.substring(0, 200));
+            throw new Error('Invalid JSON response from custom API');
+          }
           
           // Check for new API format (with MaSoThue field)
           if (data.MaSoThue && data.Title) {
@@ -490,6 +506,9 @@ app.get('/api/tax-info', (req, res) => {
 
 // Tax Code Lookup API
 app.get('/api/tax-lookup/:taxCode', async (req, res) => {
+  // Set JSON header immediately to ensure all responses are JSON
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  
   try {
     const { taxCode } = req.params;
     console.log(`[Tax Lookup] Request received for tax code: ${taxCode}`);
@@ -545,10 +564,14 @@ app.get('/api/tax-lookup/:taxCode', async (req, res) => {
     });
     
     // Always return 200 with error message, not 500, so frontend can handle gracefully
-    return res.status(200).json({
-      success: false,
-      message: `Lỗi khi tra cứu: ${error.message || 'Vui lòng thử lại sau'}`
-    });
+    // Ensure headers are set before sending response
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(200).json({
+        success: false,
+        message: `Lỗi khi tra cứu: ${error.message || 'Vui lòng thử lại sau'}`
+      });
+    }
   }
 });
 
@@ -691,11 +714,20 @@ app.use((err, req, res, next) => {
   // Ensure JSON response even on errors - check if headers already sent
   if (!res.headersSent) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.status(500).json({
-      success: false,
-      message: err.message || 'Something went wrong!',
-      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    
+    // For tax-lookup endpoint, return 200 with error message instead of 500
+    if (req.url && req.url.includes('/api/tax-lookup/')) {
+      res.status(200).json({
+        success: false,
+        message: err.message || 'Lỗi khi tra cứu thông tin. Vui lòng thử lại sau.'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: err.message || 'Something went wrong!',
+        error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      });
+    }
   } else {
     // If headers already sent, try to end the response
     res.end();
