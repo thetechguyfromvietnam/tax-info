@@ -53,6 +53,20 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Middleware to ensure all responses are JSON
+app.use((req, res, next) => {
+  // Store original json method
+  const originalJson = res.json;
+  
+  // Override json method to ensure Content-Type header
+  res.json = function(data) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return originalJson.call(this, data);
+  };
+  
+  next();
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -664,13 +678,28 @@ app.post('/api/tax-info', (req, res) => {
   }
 });
 
-// Error handling middleware
+// Error handling middleware - MUST be after all routes
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Something went wrong!'
+  console.error('[Error Handler]', err.stack);
+  console.error('[Error Handler] Error details:', {
+    message: err.message,
+    name: err.name,
+    url: req.url,
+    method: req.method
   });
+  
+  // Ensure JSON response even on errors - check if headers already sent
+  if (!res.headersSent) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Something went wrong!',
+      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  } else {
+    // If headers already sent, try to end the response
+    res.end();
+  }
 });
 
 // 404 handler
