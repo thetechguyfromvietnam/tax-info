@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { motion } from 'framer-motion'
 import { FileText, CheckCircle, XCircle, Search } from 'lucide-react'
 import { getApiUrl } from '../utils/api'
+import { t } from '../utils/i18n'
 
 const TaxInfo = () => {
   const {
@@ -19,6 +20,13 @@ const TaxInfo = () => {
   const [isLookingUp, setIsLookingUp] = useState(false)
   const [lookupResult, setLookupResult] = useState(null)
   const [savedTaxInfo, setSavedTaxInfo] = useState(null)
+
+  // Helper function to get bilingual label
+  const getBilingualLabel = (key) => {
+    const vi = t(key, 'vi')
+    const en = t(key, 'en')
+    return vi === en ? vi : `${vi} / ${en}`
+  }
 
   // Load saved tax info on mount
   useEffect(() => {
@@ -54,7 +62,7 @@ const TaxInfo = () => {
     if (!taxCode || !/^[0-9]{10,13}$/.test(taxCode)) {
       setLookupResult({
         success: false,
-        message: 'Mã số thuế không hợp lệ. Vui lòng nhập 10-13 chữ số.',
+        message: getBilingualLabel('lookupInvalid'),
       })
       return
     }
@@ -90,7 +98,7 @@ const TaxInfo = () => {
         console.log('[Frontend] Lookup response:', data)
         
         if (data.success && data.data) {
-          setLookupResult({ success: true, message: 'Đã tìm thấy thông tin công ty' })
+          setLookupResult({ success: true, message: getBilingualLabel('lookupSuccess') })
           const info = data.data
           if (info.companyName) setValue('companyName', info.companyName)
           if (info.address) setValue('address', info.address)
@@ -101,27 +109,27 @@ const TaxInfo = () => {
         } else {
           setLookupResult({
             success: false,
-            message: data.message || 'Không tìm thấy thông tin công ty từ các nguồn tra cứu',
+            message: data.message || getBilingualLabel('lookupFailed'),
           })
         }
       } catch (fetchError) {
         clearTimeout(timeoutId)
         
         if (fetchError.name === 'AbortError') {
-          throw new Error('Yêu cầu tra cứu quá thời gian. Vui lòng thử lại.')
+          throw new Error(getBilingualLabel('lookupTimeout'))
         }
         throw fetchError
       }
     } catch (err) {
       console.error('[Frontend] Lookup error:', err)
-      let errorMessage = 'Không thể tra cứu thông tin. Vui lòng thử lại.'
+      let errorMessage = getBilingualLabel('lookupError')
       
       if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
-        errorMessage = 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng hoặc đảm bảo server đang chạy.'
-      } else if (err.message?.includes('timeout') || err.message?.includes('thời gian')) {
-        errorMessage = 'Yêu cầu tra cứu quá thời gian. Vui lòng thử lại.'
+        errorMessage = getBilingualLabel('lookupNetworkError')
+      } else if (err.message?.includes('timeout') || err.message?.includes('thời gian') || err.message?.includes('timed out')) {
+        errorMessage = getBilingualLabel('lookupTimeout')
       } else if (err.message) {
-        errorMessage = `Lỗi: ${err.message}`
+        errorMessage = `${getBilingualLabel('error')}: ${err.message}`
       }
       
       setLookupResult({
@@ -170,7 +178,7 @@ const TaxInfo = () => {
         
         // Check if response is ok
         if (!res.ok) {
-          let errorMessage = `Lỗi HTTP ${res.status}: ${res.statusText}`
+          let errorMessage = `${getBilingualLabel('error')} HTTP ${res.status}: ${res.statusText}`
           try {
             const errorData = await res.json()
             if (errorData.message) {
@@ -187,7 +195,7 @@ const TaxInfo = () => {
         console.log('[TaxInfo] Response data:', data)
         
         if (!data.success) {
-          throw new Error(data.message || 'Lưu thông tin thất bại')
+          throw new Error(data.message || getBilingualLabel('submitError'))
         }
         
         // Check Google Sheets sync status
@@ -225,19 +233,19 @@ const TaxInfo = () => {
         clearTimeout(timeoutId)
         
         if (fetchError.name === 'AbortError') {
-          throw new Error('Yêu cầu quá thời gian. Vui lòng kiểm tra kết nối mạng và thử lại.')
+          throw new Error(getBilingualLabel('submitTimeout'))
         }
         throw fetchError
       }
     } catch (err) {
       console.error('[TaxInfo] Save tax info error:', err)
-      let errorMessage = err.message || 'Có lỗi xảy ra khi lưu thông tin'
+      let errorMessage = err.message || getBilingualLabel('submitError')
       
       // Provide more specific error messages
       if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
-        errorMessage = 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng và thử lại.'
-      } else if (err.message?.includes('timeout') || err.message?.includes('thời gian')) {
-        errorMessage = 'Yêu cầu quá thời gian. Vui lòng kiểm tra kết nối mạng và thử lại.'
+        errorMessage = getBilingualLabel('submitNetworkError')
+      } else if (err.message?.includes('timeout') || err.message?.includes('thời gian') || err.message?.includes('timed out')) {
+        errorMessage = getBilingualLabel('submitTimeout')
       }
       
       setSubmitError(errorMessage)
@@ -259,10 +267,10 @@ const TaxInfo = () => {
             <FileText className="text-white" size={32} />
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-amber-800 mb-2">
-            Thông Tin Mã Số Thuế
+            {getBilingualLabel('title')}
           </h1>
           <p className="text-neutral-600">
-            Vui lòng điền thông tin mã số thuế để xuất hóa đơn
+            {getBilingualLabel('subtitle')}
           </p>
         </motion.div>
 
@@ -271,9 +279,9 @@ const TaxInfo = () => {
           <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
             <CheckCircle className="text-green-600" size={22} />
             <div className="flex-1">
-              <p className="font-semibold text-green-800">Lưu thành công!</p>
+              <p className="font-semibold text-green-800">{getBilingualLabel('saveSuccess')}</p>
               <p className="text-sm text-green-700">
-                Thông tin mã số thuế và số hóa đơn đã được lưu.
+                {getBilingualLabel('saveSuccessMessage')}
               </p>
             </div>
           </div>
@@ -282,7 +290,7 @@ const TaxInfo = () => {
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
             <XCircle className="text-red-600" size={22} />
             <div>
-              <p className="font-semibold text-red-800">Lỗi</p>
+              <p className="font-semibold text-red-800">{getBilingualLabel('error')}</p>
               <p className="text-sm text-red-700">{submitError}</p>
             </div>
           </div>
@@ -293,23 +301,23 @@ const TaxInfo = () => {
           <div className="mb-6 bg-white rounded-xl shadow-sm border border-amber-100 p-4 text-sm">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle className="text-green-600" size={18} />
-              <span className="font-semibold text-amber-800">Thông tin đã lưu gần nhất</span>
+              <span className="font-semibold text-amber-800">{getBilingualLabel('lastSavedInfo')}</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>
-                <span className="text-neutral-500">Mã số thuế:</span>{' '}
+                <span className="text-neutral-500">{getBilingualLabel('taxCode')}:</span>{' '}
                 <span className="font-semibold">{savedTaxInfo.taxCode || '-'}</span>
               </div>
               <div>
-                <span className="text-neutral-500">Số hóa đơn:</span>{' '}
+                <span className="text-neutral-500">{getBilingualLabel('invoiceNumber')}:</span>{' '}
                 <span className="font-semibold">{savedTaxInfo.invoiceNumber || '-'}</span>
               </div>
               <div className="md:col-span-2">
-                <span className="text-neutral-500">Tên công ty:</span>{' '}
+                <span className="text-neutral-500">{getBilingualLabel('companyName')}:</span>{' '}
                 <span className="font-semibold">{savedTaxInfo.companyName || '-'}</span>
               </div>
               <div className="md:col-span-2">
-                <span className="text-neutral-500">Địa chỉ:</span>{' '}
+                <span className="text-neutral-500">{getBilingualLabel('address')}:</span>{' '}
                 <span className="font-semibold">{savedTaxInfo.address || '-'}</span>
               </div>
             </div>
@@ -330,21 +338,21 @@ const TaxInfo = () => {
                 htmlFor="taxCode"
                 className="block text-sm font-medium text-neutral-700 mb-2"
               >
-                Mã số thuế <span className="text-red-500">*</span>
+                {getBilingualLabel('taxCodeLabel')} <span className="text-red-500">*</span>
               </label>
               <div className="flex gap-2">
                 <input
                   id="taxCode"
                   type="text"
                   {...register('taxCode', {
-                    required: 'Vui lòng nhập mã số thuế',
+                    required: getBilingualLabel('taxCodeRequired'),
                     pattern: {
                       value: /^[0-9]{10,13}$/,
-                      message: 'Mã số thuế phải có 10-13 chữ số',
+                      message: getBilingualLabel('taxCodeInvalid'),
                     },
                   })}
                   className="flex-1 px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                  placeholder="Nhập mã số thuế"
+                  placeholder={getBilingualLabel('taxCodePlaceholder')}
                 />
                 <button
                   type="button"
@@ -356,10 +364,10 @@ const TaxInfo = () => {
                   className="inline-flex items-center justify-center px-4 py-3 rounded-lg border border-amber-500 text-amber-700 text-sm font-medium hover:bg-amber-50"
                   disabled={isLookingUp}
                 >
-                  {isLookingUp ? 'Đang tra...' : (
+                  {isLookingUp ? getBilingualLabel('lookingUp') : (
                     <>
                       <Search size={16} className="mr-1" />
-                      Tra cứu
+                      {getBilingualLabel('lookup')}
                     </>
                   )}
                 </button>
@@ -384,16 +392,16 @@ const TaxInfo = () => {
                 htmlFor="invoiceNumber"
                 className="block text-sm font-medium text-neutral-700 mb-2"
               >
-                Số hóa đơn (nhân viên ghi trước) <span className="text-red-500">*</span>
+                {getBilingualLabel('invoiceNumberLabel')} <span className="text-red-500">*</span>
               </label>
               <input
                 id="invoiceNumber"
                 type="text"
                 {...register('invoiceNumber', {
-                  required: 'Vui lòng nhập số hóa đơn',
+                  required: getBilingualLabel('invoiceNumberRequired'),
                 })}
                 className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                placeholder="VD: 000123"
+                placeholder={getBilingualLabel('invoiceNumberPlaceholder')}
               />
               {errors.invoiceNumber && (
                 <p className="mt-1 text-xs text-red-600">{errors.invoiceNumber.message}</p>
@@ -406,14 +414,14 @@ const TaxInfo = () => {
                 htmlFor="companyName"
                 className="block text-sm font-medium text-neutral-700 mb-2"
               >
-                Tên công ty / Tên khách hàng
+                {getBilingualLabel('companyNameLabel')}
               </label>
               <input
                 id="companyName"
                 type="text"
                 {...register('companyName')}
                 className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                placeholder="Nhập tên công ty hoặc khách hàng"
+                placeholder={getBilingualLabel('companyNamePlaceholder')}
               />
             </div>
 
@@ -423,14 +431,14 @@ const TaxInfo = () => {
                 htmlFor="address"
                 className="block text-sm font-medium text-neutral-700 mb-2"
               >
-                Địa chỉ
+                {getBilingualLabel('addressLabel')}
               </label>
               <textarea
                 id="address"
                 rows={3}
                 {...register('address')}
                 className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm resize-none"
-                placeholder="Nhập địa chỉ (tự động thêm 'Việt Nam' ở cuối nếu thiếu)"
+                placeholder={getBilingualLabel('addressPlaceholder')}
               />
             </div>
 
@@ -440,20 +448,20 @@ const TaxInfo = () => {
                 htmlFor="email"
                 className="block text-sm font-medium text-neutral-700 mb-2"
               >
-                Email <span className="text-red-500">*</span>
+                {getBilingualLabel('emailLabel')} <span className="text-red-500">*</span>
               </label>
               <input
                 id="email"
                 type="email"
                 {...register('email', {
-                  required: 'Vui lòng nhập email',
+                  required: getBilingualLabel('emailRequired'),
                   pattern: {
                     value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                    message: 'Email không hợp lệ',
+                    message: getBilingualLabel('emailInvalid'),
                   },
                 })}
                 className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                placeholder="Nhập email"
+                placeholder={getBilingualLabel('emailPlaceholder')}
               />
               {errors.email && (
                 <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>
@@ -466,25 +474,25 @@ const TaxInfo = () => {
                 htmlFor="phone"
                 className="block text-sm font-medium text-neutral-700 mb-2"
               >
-                Số điện thoại <span className="text-red-500">*</span>
+                {getBilingualLabel('phoneLabel')} <span className="text-red-500">*</span>
               </label>
               <input
                 id="phone"
                 type="tel"
                 {...register('phone', {
-                  required: 'Vui lòng nhập số điện thoại',
+                  required: getBilingualLabel('phoneRequired'),
                   validate: (value) => {
-                    if (!value) return 'Vui lòng nhập số điện thoại'
+                    if (!value) return getBilingualLabel('phoneRequired')
                     // Normalize phone number for validation
                     let normalized = value.replace(/\s+/g, '').replace(/-/g, '').replace(/\+84/g, '0').replace(/^84/, '0')
                     if (!/^[0-9]{10,11}$/.test(normalized)) {
-                      return 'Số điện thoại phải có 10-11 chữ số (có thể nhập với dấu cách hoặc dấu gạch ngang)'
+                      return getBilingualLabel('phoneInvalid')
                     }
                     return true
                   },
                 })}
                 className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                placeholder="Nhập số điện thoại (ví dụ: 0123 456 789 hoặc 0123-456-789)"
+                placeholder={getBilingualLabel('phonePlaceholder')}
               />
               {errors.phone && (
                 <p className="mt-1 text-xs text-red-600">{errors.phone.message}</p>
@@ -498,7 +506,7 @@ const TaxInfo = () => {
               disabled={isSubmitting}
               className="w-full inline-flex items-center justify-center px-6 py-3 rounded-xl bg-amber-500 text-white font-semibold text-sm hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? 'Đang lưu...' : 'Lưu thông tin'}
+              {isSubmitting ? getBilingualLabel('saving') : getBilingualLabel('save')}
             </button>
           </div>
         </motion.form>
